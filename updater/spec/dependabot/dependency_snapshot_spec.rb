@@ -140,7 +140,7 @@ RSpec.describe Dependabot::DependencySnapshot do
     end
   end
 
-  describe "::add_handled_grouped_dependencies" do
+  describe "::add_handled_group_dependencies" do
     subject(:create_dependency_snapshot) do
       described_class.create_from_job_definition(
         job: job,
@@ -157,7 +157,7 @@ RSpec.describe Dependabot::DependencySnapshot do
 
     it "handles dependencies" do
       snapshot = create_dependency_snapshot
-      snapshot.add_handled_grouped_dependencies(%w(a b))
+      snapshot.add_handled_group_dependencies(%w(a b))
       expect(snapshot.handled_dependencies).to eq(Set.new(%w(a b)))
     end
 
@@ -182,7 +182,7 @@ RSpec.describe Dependabot::DependencySnapshot do
       it "handles dependencies for all directories" do
         snapshot = create_dependency_snapshot
         snapshot.current_directory = "/foo"
-        snapshot.add_handled_grouped_dependencies(%w(a b))
+        snapshot.add_handled_group_dependencies(%w(a b))
 
         expect(snapshot.handled_dependencies).to eq(Set.new(%w(a b)))
         snapshot.current_directory = "/bar"
