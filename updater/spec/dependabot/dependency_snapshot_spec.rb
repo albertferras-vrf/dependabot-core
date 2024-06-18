@@ -101,7 +101,7 @@ RSpec.describe Dependabot::DependencySnapshot do
 
     it "handles dependencies" do
       snapshot = create_dependency_snapshot
-      snapshot.add_handled_dependencies_current_directory(%w(a b))
+      snapshot.add_handled_dependencies(%w(a b))
       expect(snapshot.handled_dependencies).to eq(Set.new(%w(a b)))
     end
 
