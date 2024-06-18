@@ -158,7 +158,7 @@ RSpec.describe Dependabot::DependencySnapshot do
     it "handles dependencies" do
       snapshot = create_dependency_snapshot
       snapshot.add_handled_group_dependencies(%w(a b))
-      expect(snapshot.handled_dependencies).to eq(Set.new(%w(a b)))
+      expect(snapshot.handled_group_dependencies).to eq(Set.new(%w(a b)))
     end
 
     context "when there are multiple directories" do
@@ -184,9 +184,9 @@ RSpec.describe Dependabot::DependencySnapshot do
         snapshot.current_directory = "/foo"
         snapshot.add_handled_group_dependencies(%w(a b))
 
-        expect(snapshot.handled_dependencies).to eq(Set.new(%w(a b)))
+        expect(snapshot.handled_group_dependencies).to eq(Set.new(%w(a b)))
         snapshot.current_directory = "/bar"
-        expect(snapshot.handled_dependencies).to eq(Set.new(%w(a b)))
+        expect(snapshot.handled_group_dependencies).to eq(Set.new(%w(a b)))
       end
     end
   end

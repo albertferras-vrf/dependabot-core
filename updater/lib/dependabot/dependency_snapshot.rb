@@ -112,7 +112,7 @@ module Dependabot
       @handled_dependencies[@current_directory] = set
     end
 
-    sig { params(dependencies_hash: T::Array[T::Hash[Symbol, String]]).void }
+    sig { params(dependencies_hash: T::Array[{name: T.nilable(String), directory: T.nilable(String)}]).void }
     def add_handled_group_dependencies(dependencies_hash)
       raise "Current directory not set" if @current_directory == ""
 
@@ -128,6 +128,11 @@ module Dependabot
       raise "Current directory not set" if @current_directory == ""
 
       T.must(@handled_dependencies[@current_directory])
+    end
+
+    sig { returns(T::Set[String]) }
+    def handled_group_dependencies
+      T.must(@handled_dependencies.values.flatten)
     end
 
     sig { params(dir: String).void }
@@ -147,7 +152,7 @@ module Dependabot
       return allowed_dependencies unless groups.any?
 
       # Otherwise return dependencies that haven't been handled during the group update portion.
-      allowed_dependencies.reject { |dep| T.must(@handled_dependencies[@current_directory]).include?(dep.name) }
+      allowed_dependencies.reject { |dep| T.must(@handled_dependencies.values.flatten).include?(dep.name) }
     end
 
     private
