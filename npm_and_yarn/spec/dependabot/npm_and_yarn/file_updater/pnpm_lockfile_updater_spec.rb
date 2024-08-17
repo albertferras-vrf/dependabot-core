@@ -93,6 +93,69 @@ RSpec.describe Dependabot::NpmAndYarn::FileUpdater::PnpmLockfileUpdater do
       end
     end
 
+    context "when there is a unsupported engine response from registry" do
+      let(:dependency_name) { "@blocknote/core" }
+      let(:version) { "0.15.4" }
+      let(:previous_version) { "0.15.3 " }
+      let(:requirements) do
+        [{
+          file: "package.json",
+          requirement: "0.15.4",
+          groups: ["dependencies"],
+          source: nil
+        }]
+      end
+
+      let(:project_name) { "pnpm/unsupported_engine" }
+
+      it "raises a helpful error" do
+        expect { updated_pnpm_lock_content }
+          .to raise_error(Dependabot::ToolVersionNotSupported)
+      end
+    end
+
+    context "when there is a unsupported engine (npm) response from registry" do
+      let(:dependency_name) { "@npmcli/fs" }
+      let(:version) { "3.1.1" }
+      let(:previous_version) { "3.1.0 " }
+      let(:requirements) do
+        [{
+          file: "package.json",
+          requirement: "3.1.1",
+          groups: ["devDependencies"],
+          source: nil
+        }]
+      end
+
+      let(:project_name) { "pnpm/unsupported_engine_npm" }
+
+      it "raises a helpful error" do
+        expect { updated_pnpm_lock_content }
+          .to raise_error(Dependabot::ToolVersionNotSupported)
+      end
+    end
+
+    context "when there is a unsupported engine response (pnpm) from registry" do
+      let(:dependency_name) { "eslint" }
+      let(:version) { "9.9.0" }
+      let(:previous_version) { "8.32.0" }
+      let(:requirements) do
+        [{
+          file: "package.json",
+          requirement: "9.9.0",
+          groups: ["devDependencies"],
+          source: nil
+        }]
+      end
+
+      let(:project_name) { "pnpm/unsupported_engine_pnpm" }
+
+      it "raises a helpful error" do
+        expect { updated_pnpm_lock_content }
+          .to raise_error(Dependabot::ToolVersionNotSupported)
+      end
+    end
+
     context "with a dependency that can't be found" do
       let(:project_name) { "pnpm/nonexistent_dependency_yanked_version" }
 
@@ -124,6 +187,102 @@ RSpec.describe Dependabot::NpmAndYarn::FileUpdater::PnpmLockfileUpdater do
       end
 
       let(:project_name) { "pnpm/nonexistent_locked_dependency" }
+
+      it "raises a helpful error" do
+        expect { updated_pnpm_lock_content }
+          .to raise_error(Dependabot::PrivateSourceAuthenticationFailure)
+      end
+    end
+
+    context "with a registry resolution that returns err_pnpm_tarball_integrity response" do
+      let(:dependency_name) { "lodash" }
+      let(:version) { "22.2.0" }
+      let(:previous_version) { "^20.10.5" }
+      let(:requirements) do
+        [{
+          file: "package.json",
+          requirement: "22.2.0",
+          groups: ["devDependencies"],
+          source: nil
+        }]
+      end
+      let(:previous_requirements) do
+        [{
+          file: "package.json",
+          requirement: "^20.10.5",
+          groups: ["devDependencies"],
+          source: nil
+        }]
+      end
+
+      let(:project_name) { "pnpm/tarball_integrity" }
+
+      it "raises a helpful error" do
+        expect { updated_pnpm_lock_content }
+          .to raise_error(Dependabot::DependencyFileNotResolvable)
+      end
+    end
+
+    context "with a registry resolution that returns err_pnpm_patch_not_applied response" do
+      let(:dependency_name) { "@nx/js" }
+      let(:version) { "19.5.7" }
+      let(:previous_version) { "18.0.2" }
+      let(:requirements) do
+        [{
+          file: "package.json",
+          requirement: "19.5.7",
+          groups: ["patchedDependencies"],
+          source: nil
+        }]
+      end
+      let(:previous_requirements) do
+        [{
+          file: "package.json",
+          requirement: "18.0.2",
+          groups: ["patchedDependencies"],
+          source: nil
+        }]
+      end
+
+      let(:project_name) { "pnpm/patch_not_applied" }
+
+      it "raises a helpful error" do
+        expect { updated_pnpm_lock_content }
+          .to raise_error(Dependabot::DependencyFileNotResolvable)
+      end
+    end
+
+    context "with a registry resolution that returns err_pnpm_unsupported_platform response" do
+      let(:dependency_name) { "@swc/core-linux-arm-gnueabihf" }
+      let(:version) { "1.7.11" }
+      let(:previous_version) { "1.3.56" }
+      let(:requirements) do
+        [{
+          file: "package.json",
+          requirement: "1.7.11",
+          groups: ["optionalDependencies"],
+          source: nil
+        }]
+      end
+      let(:previous_requirements) do
+        [{
+          file: "package.json",
+          requirement: "1.3.56",
+          groups: ["optionalDependencies"],
+          source: nil
+        }]
+      end
+
+      let(:project_name) { "pnpm/unsupported_platform" }
+
+      it "raises a helpful error" do
+        expect { updated_pnpm_lock_content }
+          .to raise_error(Dependabot::ToolVersionNotSupported)
+      end
+    end
+
+    context "when there is a private repo we don't have access to and returns a 4xx error" do
+      let(:project_name) { "pnpm/private_repo_no_access" }
 
       it "raises a helpful error" do
         expect { updated_pnpm_lock_content }
@@ -164,6 +323,15 @@ RSpec.describe Dependabot::NpmAndYarn::FileUpdater::PnpmLockfileUpdater do
               ]
             )
         end
+      end
+    end
+
+    context "when there is a private repo returns a 5xx error" do
+      let(:project_name) { "pnpm/private_repo_with_server_error" }
+
+      it "raises a helpful error" do
+        expect { updated_pnpm_lock_content }
+          .to raise_error(Dependabot::PrivateSourceAuthenticationFailure)
       end
     end
 

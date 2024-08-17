@@ -767,5 +767,204 @@ RSpec.describe Dependabot::NpmAndYarn::FileUpdater::NpmLockfileUpdater do
         expect { updated_npm_lock }.to raise_error(Dependabot::PrivateSourceAuthenticationFailure)
       end
     end
+
+    context "with a dependency with no access and E401 error" do
+      let(:response) { "code E401\nnpm ERR! Incorrect or missing password.\nnpm ERR!" }
+
+      it "raises a helpful error" do
+        expect { updated_npm_lock }.to raise_error(Dependabot::PrivateSourceAuthenticationFailure) do |error|
+          expect(error.message)
+            .to include(
+              "code E401"
+            )
+        end
+      end
+    end
+
+    context "with a registry with access that results in eai access code failure" do
+      let(:response) { "\n. request to https://registry.npmjs.org/next failed, reason: getaddrinfo EAI_AGAIN ." }
+
+      it "raises a helpful error" do
+        expect { updated_npm_lock }.to raise_error(Dependabot::PrivateSourceTimedOut) do |error|
+          expect(error.message)
+            .to include(
+              "Network Error. Access to https://registry.npmjs.org/next failed"
+            )
+        end
+      end
+    end
+
+    context "with a registry with access that results in socket hang up error" do
+      let(:response) { "https://registry.npm.xyz.org/qs: socket hang up" }
+
+      it "raises a helpful error" do
+        expect { updated_npm_lock }.to raise_error(Dependabot::PrivateSourceTimedOut) do |error|
+          expect(error.message)
+            .to include(
+              "https://registry.npm.xyz.org/qs"
+            )
+        end
+      end
+    end
+
+    context "with a registry with access that results in variation of socket hang up error" do
+      let(:response) { "request to https://nexus.xyz.com/repository/npm-js/ejs failed,reason: socket hang up" }
+
+      it "raises a helpful error" do
+        expect { updated_npm_lock }.to raise_error(Dependabot::PrivateSourceTimedOut) do |error|
+          expect(error.message)
+            .to include(
+              "https://nexus.xyz.com/repository/npm-js/ejs"
+            )
+        end
+      end
+    end
+
+    context "with a registry with access that results in ESOCKETTIMEDOUT error" do
+      let(:response) { "https://npm.pkg.github.com/@group%2ffe-release: ESOCKETTIMEDOUT" }
+
+      it "raises a helpful error" do
+        expect { updated_npm_lock }.to raise_error(Dependabot::PrivateSourceTimedOut) do |error|
+          expect(error.message)
+            .to include(
+              "https://npm.pkg.github.com/@group/fe-release"
+            )
+        end
+      end
+    end
+
+    context "with a package.json file with invalid entry" do
+      let(:response) { "premature close" }
+
+      it "raises a helpful error" do
+        expect { updated_npm_lock }.to raise_error(Dependabot::DependencyFileNotParseable) do |error|
+          expect(error.message)
+            .to include(
+              "Error parsing your package.json manifest"
+            )
+        end
+      end
+    end
+
+    context "with a package-lock.json file with empty package object" do
+      let(:response) { "Object for dependency \"anymatch\" is empty.\nSomething went wrong." }
+
+      it "raises a helpful error" do
+        expect { updated_npm_lock }.to raise_error(Dependabot::DependencyFileNotResolvable) do |error|
+          expect(error.message)
+            .to include(
+              "Object for dependency \"anymatch\" is empty"
+            )
+        end
+      end
+    end
+  end
+
+  context "with a override that conflicts with direct dependency" do
+    let(:files) { project_dependency_files("npm/simple_with_override") }
+    let(:dependency_name) { "eslint" }
+    let(:version) { "9.5.1" }
+    let(:previous_version) { "^9.5.0" }
+    let(:requirements) do
+      [{
+        file: "package.json",
+        requirement: "^9.5.0",
+        groups: ["devDependencies"],
+        source: nil
+      }]
+    end
+    let(:previous_requirements) { requirements }
+
+    it "raises a helpful error" do
+      expect { updated_npm_lock_content }.to raise_error(Dependabot::DependencyFileNotResolvable)
+    end
+  end
+
+  context "with a registry package lookup that returns a 404" do
+    let(:files) { project_dependency_files("npm/simple_with_no_access_registry") }
+    let(:dependency_name) { "@gcorevideo/rtckit" }
+    let(:version) { "3.3.1" }
+    let(:previous_version) { "^3.3.0" }
+    let(:requirements) do
+      [{
+        file: "package.json",
+        requirement: "^3.3.0",
+        groups: ["dependencies"],
+        source: {
+          type: "registry",
+          url: "http://npmrepo.nl"
+        }
+      }]
+    end
+    let(:previous_requirements) { requirements }
+
+    it "raises a helpful error" do
+      expect { updated_npm_lock_content }.to raise_error(Dependabot::DependencyFileNotResolvable)
+    end
+  end
+
+  context "with a dependency with nested aliases not supported" do
+    let(:files) { project_dependency_files("npm/simple_with_nested_deps") }
+    let(:dependency_name) { "express" }
+    let(:version) { "4.19.2" }
+    let(:previous_version) { "^4.17.1" }
+    let(:requirements) do
+      [{
+        file: "package.json",
+        requirement: "^4.17.1",
+        groups: ["devDependencies"],
+        source: nil
+      }]
+    end
+    let(:previous_requirements) { requirements }
+
+    it "raises a helpful error" do
+      expect { updated_npm_lock_content }.to raise_error(Dependabot::DependencyFileNotResolvable)
+    end
+  end
+
+  context "with a dependency with no access" do
+    let(:files) { project_dependency_files("npm/simple_with_no_access") }
+    let(:dependency_name) { "typescript" }
+    let(:version) { "5.5.4" }
+    let(:previous_version) { "^5.1.5" }
+    let(:requirements) do
+      [{
+        file: "package.json",
+        requirement: "^5.1.5",
+        groups: ["devDependencies"],
+        source: nil
+      }]
+    end
+    let(:previous_requirements) { requirements }
+
+    it "raises a helpful error" do
+      expect { updated_npm_lock_content }.to raise_error(Dependabot::PrivateSourceAuthenticationFailure)
+    end
+  end
+
+  context "with a peer dependency that is unresolved" do
+    let(:files) { project_dependency_files("npm/simple_with_peer_deps") }
+    let(:dependency_name) { "eslint" }
+    let(:version) { "9.8.0" }
+    let(:previous_version) { "^8.43.0" }
+    let(:requirements) do
+      [{
+        file: "package.json",
+        requirement: "^8.43.0",
+        groups: ["devDependencies"],
+        source: nil
+      }]
+    end
+    let(:previous_requirements) { requirements }
+
+    it "raises a helpful error" do
+      expect { updated_npm_lock_content }.to raise_error(Dependabot::DependencyFileNotResolvable) do |error|
+        expect(error.message)
+          .to include(
+            "Error while updating peer dependency."
+          )
+      end
+    end
   end
 end

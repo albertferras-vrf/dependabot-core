@@ -6,6 +6,8 @@ require "sorbet-runtime"
 require "dependabot/dependency_change_builder"
 require "dependabot/updater/dependency_group_change_batch"
 require "dependabot/workspace"
+require "dependabot/updater/security_update_helpers"
+require "dependabot/notices"
 
 # This module contains the methods required to build a DependencyChange for
 # a single DependencyGroup.
@@ -22,6 +24,7 @@ module Dependabot
     module GroupUpdateCreation
       extend T::Sig
       extend T::Helpers
+      include PullRequestHelpers
 
       abstract!
 
@@ -51,6 +54,14 @@ module Dependabot
           initial_dependency_files: dependency_snapshot.dependency_files
         )
         original_dependencies = dependency_snapshot.dependencies
+
+        notices = []
+
+        # Add a deprecation notice if the package manager is deprecated
+        add_deprecation_notice(
+          notices: notices,
+          package_manager: dependency_snapshot.package_manager
+        )
 
         Dependabot.logger.info("Updating the #{job.source.directory} directory.")
         group.dependencies.each do |dependency|
@@ -89,6 +100,8 @@ module Dependabot
             dep.name.casecmp(dependency.name)&.zero?
           end
 
+          next unless lead_dependency
+
           dependency_change = create_change_for(T.must(lead_dependency), updated_dependencies, dependency_files, group)
 
           # Move on to the next dependency using the existing files if we
@@ -106,7 +119,8 @@ module Dependabot
           job: job,
           updated_dependencies: group_changes.updated_dependencies,
           updated_dependency_files: group_changes.updated_dependency_files,
-          dependency_group: group
+          dependency_group: group,
+          notices: notices
         )
 
         if Experiments.enabled?("dependency_change_validation") && !dependency_change.all_have_previous_version?

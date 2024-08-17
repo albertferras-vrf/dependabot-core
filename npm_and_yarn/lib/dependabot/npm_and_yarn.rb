@@ -56,6 +56,10 @@ module Dependabot
     # Used to check if error message contains timeout fetching package
     TIMEOUT_FETCHING_PACKAGE_REGEX = %r{(?<url>.+)/(?<package>[^/]+): ETIMEDOUT}
 
+    ESOCKETTIMEDOUT = /(?<package>.*?): ESOCKETTIMEDOUT/
+
+    SOCKET_HANG_UP = /(?<url>.*?): socket hang up/
+
     # Used to identify git unreachable error
     UNREACHABLE_GIT_CHECK_REGEX = /ls-remote --tags --heads (?<url>.*)/
 
@@ -78,6 +82,8 @@ module Dependabot
       PACKAGE_NOT_FOUND: %r{(?<package_req>@[\w-]+\/[\w-]+@\S+): Package not found},
       FAILED_TO_RETRIEVE: %r{(?<package_req>@[\w-]+\/[\w-]+@\S+): The remote server failed to provide the requested resource} # rubocop:disable Layout/LineLength
     }.freeze, T::Hash[String, Regexp])
+
+    YN0082_PACKAGE_NOT_FOUND_REGEX = /YN0082:.*?(\S+@\S+): No candidates found/
 
     PACKAGE_NOT_FOUND2 = %r{/[^/]+: Not found}
     PACKAGE_NOT_FOUND2_PACKAGE_NAME_REGEX = %r{/(?<package_name>[^/]+): Not found}
@@ -102,11 +108,22 @@ module Dependabot
     # Used to identify if authentication failure error
     AUTHENTICATION_TOKEN_NOT_PROVIDED = "authentication token not provided"
     AUTHENTICATION_IS_NOT_CONFIGURED = "No authentication configured for request"
+    AUTHENTICATION_HEADER_NOT_PROVIDED = "Unauthenticated: request did not include an Authorization header."
 
     # Used to identify if error message is related to yarn workspaces
     DEPENDENCY_FILE_NOT_RESOLVABLE = "conflicts with direct dependency"
 
     ENV_VAR_NOT_RESOLVABLE = /Failed to replace env in config: \$\{(?<var>.*)\}/
+
+    OUT_OF_DISKSPACE = / Out of diskspace/
+
+    # yarnrc.yml errors
+    YARNRC_PARSE_ERROR = /Parse error when loading (?<filename>.*?); /
+    YARNRC_ENV_NOT_FOUND = /Usage Error: Environment variable not found /
+    YARNRC_ENV_NOT_FOUND_REGEX = /Usage Error: Environment variable not found \((?<token>.*)\) in (?<filename>.*?) /
+    YARNRC_EAI_AGAIN = /getaddrinfo EAI_AGAIN/
+    YARNRC_ENOENT = /Internal Error: ENOENT/
+    YARNRC_ENOENT_REGEX = /Internal Error: ENOENT: no such file or directory, stat '(?<filename>.*?)'/
 
     class Utils
       extend T::Sig
@@ -241,6 +258,18 @@ module Dependabot
         handler: lambda { |message, _error, _params|
           Dependabot::NetworkUnsafeHTTP.new(message)
         }
+      },
+      "YN0082" => {
+        message: "No candidates found",
+        handler: lambda { |message, _error, _params|
+          match_data = message.match(YN0082_PACKAGE_NOT_FOUND_REGEX)
+          if match_data
+            package_req = match_data[1]
+            Dependabot::DependencyNotFound.new("#{package_req} Detail: #{message}")
+          else
+            Dependabot::DependencyNotFound.new(message)
+          end
+        }
       }
     }.freeze, T::Hash[String, {
       message: T.any(String, NilClass),
@@ -303,7 +332,8 @@ module Dependabot
         matchfn: nil
       },
       {
-        patterns: [AUTHENTICATION_TOKEN_NOT_PROVIDED, AUTHENTICATION_IS_NOT_CONFIGURED],
+        patterns: [AUTHENTICATION_TOKEN_NOT_PROVIDED, AUTHENTICATION_IS_NOT_CONFIGURED,
+                   AUTHENTICATION_HEADER_NOT_PROVIDED],
         handler: lambda { |message, _error, _params|
           Dependabot::PrivateSourceAuthenticationFailure.new(message)
         },
@@ -345,7 +375,84 @@ module Dependabot
         },
         in_usage: false,
         matchfn: nil
+      },
+      {
+        patterns: [SOCKET_HANG_UP],
+        handler: lambda { |message, _error, _params|
+          url = message.match(SOCKET_HANG_UP).named_captures.fetch(URL_CAPTURE)
+
+          Dependabot::PrivateSourceTimedOut.new(url.gsub(HTTP_CHECK_REGEX, ""))
+        },
+        in_usage: false,
+        matchfn: nil
+      },
+      {
+        patterns: [ESOCKETTIMEDOUT],
+        handler: lambda { |message, _error, _params|
+          package_req = message.match(ESOCKETTIMEDOUT).named_captures.fetch("package")
+
+          Dependabot::PrivateSourceTimedOut.new(package_req.gsub(HTTP_CHECK_REGEX, ""))
+        },
+        in_usage: false,
+        matchfn: nil
+      },
+      {
+        patterns: [OUT_OF_DISKSPACE],
+        handler: lambda { |message, _error, _params|
+          Dependabot::OutOfDisk.new(message)
+        },
+        in_usage: false,
+        matchfn: nil
+      },
+      {
+        patterns: [YARNRC_PARSE_ERROR],
+        handler: lambda { |message, _error, _params|
+          filename = message.match(YARNRC_PARSE_ERROR).named_captures["filename"]
+
+          msg = "Error while loading \"#{filename.split('/').last}\"."
+          Dependabot::DependencyFileNotResolvable.new(msg)
+        },
+        in_usage: false,
+        matchfn: nil
+      },
+      {
+        patterns: [YARNRC_ENV_NOT_FOUND],
+        handler: lambda { |message, _error, _params|
+          error_message = message.gsub(/[[:space:]]+/, " ").strip
+
+          filename = error_message.match(YARNRC_ENV_NOT_FOUND_REGEX)
+                                    .named_captures["filename"]
+
+          env_var = error_message.match(YARNRC_ENV_NOT_FOUND_REGEX)
+                                .named_captures["token"]
+
+          msg = "Environment variable \"#{env_var}\" not found in \"#{filename.split('/').last}\"."
+          Dependabot::MissingEnvironmentVariable.new(env_var, msg)
+        },
+        in_usage: false,
+        matchfn: nil
+      },
+      {
+        patterns: [YARNRC_EAI_AGAIN],
+        handler: lambda { |_message, _error, _params|
+          Dependabot::DependencyFileNotResolvable.new("Network error while resolving dependency.")
+        },
+        in_usage: false,
+        matchfn: nil
+      },
+      {
+        patterns: [YARNRC_ENOENT],
+        handler: lambda { |message, _error, _params|
+          error_message = message.gsub(/[[:space:]]+/, " ").strip
+          filename = error_message.match(YARNRC_ENOENT_REGEX).named_captures["filename"]
+
+          Dependabot::DependencyFileNotResolvable.new("Internal error while resolving dependency." \
+                                                      "File not found \"#{filename.split('/').last}\"")
+        },
+        in_usage: false,
+        matchfn: nil
       }
+
     ].freeze, T::Array[{
       patterns: T::Array[T.any(String, Regexp)],
       handler: ErrorHandler,

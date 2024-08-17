@@ -72,13 +72,24 @@ module Dependabot
           -\sGET\shttps?://(?<source>[^/]+)/(?<package_req>[^/\s]+)}x
         MISSING_PACKAGE = %r{(?<package_req>[^/]+) - Not found}
         INVALID_PACKAGE = /Can't install (?<package_req>.*): Missing/
-        SOCKET_HANG_UP = /request to (?<url>.*) failed, reason: socket hang up/
+        SOCKET_HANG_UP = /(?:request to )?(?<url>.*): socket hang up/
+        ESOCKETTIMEDOUT = /(?<url>.*): ESOCKETTIMEDOUT/
         UNABLE_TO_AUTH_NPMRC = /Unable to authenticate, need: Basic, Bearer/
         UNABLE_TO_AUTH_REGISTRY = /Unable to authenticate, need: *.*(Basic|BASIC) *.*realm="(?<url>.*)"/
         MISSING_AUTH_TOKEN = /401 Unauthorized - GET (?<url>.*) - authentication token not provided/
         INVALID_AUTH_TOKEN =
           /401 Unauthorized - GET (?<url>.*) - unauthenticated: User cannot be authenticated with the token provided./
         NPM_PACKAGE_REGISTRY = "https://npm.pkg.github.com"
+        EOVERRIDE = /EOVERRIDE\n *.* Override for (?<deps>.*) conflicts with direct dependency/
+        NESTED_ALIAS = /nested aliases not supported/
+        PEER_DEPS_PATTERNS = T.let([/Cannot read properties of null/,
+                                    /ERESOLVE overriding peer dependency/].freeze, T::Array[Regexp])
+        PREMATURE_CLOSE = /premature close/
+        EMPTY_OBJECT_ERROR = /Object for dependency "(?<package>.*)" is empty/
+        ERROR_E401 = /code E401/
+        ERROR_E403 = /code E403/
+        ERROR_EAI_AGAIN = /request to (?<url>.*) failed, reason: getaddrinfo EAI_AGAIN/
+        PACKAGE_DISCOVERY_FAIL = /Couldn't find package "(?<pkg>.*)" *.* on the "(?<regis>.*)" registry./
 
         # TODO: look into fixing this in npm, seems like a bug in the git
         # downloader introduced in npm 7
@@ -392,7 +403,23 @@ module Dependabot
         # rubocop:disable Metrics/MethodLength
         sig { params(error: Exception).returns(T.noreturn) }
         def handle_npm_updater_error(error)
+          Dependabot.logger.warn("NPM : " + error.message)
+
           error_message = error.message
+
+          # message groups which are related to peer dependency resolution failure. Peer deps can be updated
+          # with --legacy-peer-deps flag, but it is not recommended as the flag can mess up dependency resolution
+          # and introduce breaking changes. So we let the update fail.
+          peerdep_group = Regexp.union(PEER_DEPS_PATTERNS)
+          if error_message.match(peerdep_group)
+            raise Dependabot::DependencyFileNotResolvable,
+                  "Error while updating peer dependency."
+          end
+
+          if error_message.match?(ERROR_E401) || error_message.match?(ERROR_E403)
+            raise Dependabot::PrivateSourceAuthenticationFailure, error_message
+          end
+
           if error_message.match?(MISSING_PACKAGE)
             package_name = T.must(error_message.match(MISSING_PACKAGE))
                             .named_captures["package_req"]
@@ -489,7 +516,12 @@ module Dependabot
 
           # NOTE: This check was introduced in npm8/arborist
           if error_message.include?("must provide string spec")
-            msg = "Error parsing your package.json manifest: the version requirement must be a string"
+            msg = "Error parsing your package.json manifest: the version requirement must be a string."
+            raise Dependabot::DependencyFileNotParseable, msg
+          end
+
+          if error_message.match?(PREMATURE_CLOSE)
+            msg = "Error parsing your package.json manifest"
             raise Dependabot::DependencyFileNotParseable, msg
           end
 
@@ -499,15 +531,21 @@ module Dependabot
             raise Dependabot::DependencyFileNotResolvable, msg
           end
 
-          if (git_source = error_message.match(SOCKET_HANG_UP))
-            msg = git_source.named_captures.fetch("url")
-            raise Dependabot::PrivateSourceTimedOut, T.must(msg)
+          if (git_source = error_message.match(SOCKET_HANG_UP) || error_message.match(ESOCKETTIMEDOUT))
+            msg = sanitize_uri(git_source.named_captures.fetch("url"))
+            raise Dependabot::PrivateSourceTimedOut, msg
+          end
+
+          if (package = error_message.match(EMPTY_OBJECT_ERROR))
+            msg = "Error resolving package-lock.json file. " \
+                  "Object for dependency \"#{package.named_captures.fetch('package')}\" is empty."
+            raise Dependabot::DependencyFileNotResolvable, msg
           end
 
           # Error handled when no authentication info ( _auth = user:pass )
           # is provided in config file (.npmrc) to access private registry
           if error_message.match?(UNABLE_TO_AUTH_NPMRC)
-            msg = "check .npmrc config file"
+            msg = "check .npmrc config file."
             raise Dependabot::PrivateSourceAuthenticationFailure, msg
           end
 
@@ -516,12 +554,29 @@ module Dependabot
             raise Dependabot::PrivateSourceAuthenticationFailure, msg
           end
 
+          if (git_source = error_message.match(ERROR_EAI_AGAIN))
+            msg = "Network Error. Access to #{git_source.named_captures.fetch('url')} failed."
+            raise Dependabot::PrivateSourceTimedOut, msg
+          end
+
           if (registry_source = error_message.match(INVALID_AUTH_TOKEN) ||
             error_message.match(MISSING_AUTH_TOKEN)) &&
              T.must(registry_source.named_captures.fetch("url")).include?(NPM_PACKAGE_REGISTRY)
             msg = registry_source.named_captures.fetch("url")
             raise Dependabot::InvalidGitAuthToken, T.must(msg)
           end
+
+          if (dep = error_message.match(EOVERRIDE))
+            msg = "Override for #{dep.named_captures.fetch('deps')} conflicts with direct dependency."
+            raise Dependabot::DependencyFileNotResolvable, msg
+          end
+
+          if error_message.match(NESTED_ALIAS)
+            msg = "Nested aliases are not supported in NPM versions earlier than 6.9.0."
+            raise Dependabot::DependencyFileNotResolvable, msg
+          end
+
+          raise Dependabot::DependencyFileNotResolvable, error_message if error_message.match(PACKAGE_DISCOVERY_FAIL)
 
           raise error
         end
@@ -1026,6 +1081,11 @@ module Dependabot
             JSON.parse(T.must(lockfile.content)),
             T.nilable(T::Hash[String, T.untyped])
           )
+        end
+
+        sig { params(uri: T.nilable(String)).returns(String) }
+        def sanitize_uri(uri)
+          URI.decode_www_form_component(T.must(URI.extract(T.must(uri)).first))
         end
 
         sig { returns(T::Hash[String, T.untyped]) }
