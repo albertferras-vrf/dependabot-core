@@ -113,7 +113,7 @@ RSpec.describe Dependabot::Python::FileUpdater::PipCompileFileUpdater do
     end
 
     context "with a uv header" do
-      let(:manifest_fixture_name) { "unpinned_uv.in" }
+      let(:manifest_fixture_name) { "unpinned.in" }
       let(:generated_fixture_name) { "pip_compile_uv_header.txt" }
 
       it "upgrades attrs to latest" do
