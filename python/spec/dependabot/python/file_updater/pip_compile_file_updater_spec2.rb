@@ -7,7 +7,7 @@ require "dependabot/dependency_file"
 require "dependabot/python/file_updater/pip_compile_file_updater"
 require "dependabot/shared_helpers"
 
-RSpec.describe Dependabot::Python::FileUpdater::PipCompileFileUpdater do
+RSpec.shared_examples "PipCompileFileUpdater" do |requirements_dir, autogen_header_string|
   let(:updater) do
     described_class.new(
       dependency_files: dependency_files,
@@ -18,14 +18,14 @@ RSpec.describe Dependabot::Python::FileUpdater::PipCompileFileUpdater do
   let(:dependency_files) { [manifest_file, generated_file] }
   let(:manifest_file) do
     Dependabot::DependencyFile.new(
-      name: "requirements/test.in",
+      name: "#{requirements_dir}/test.in",
       content: fixture("pip_compile_files", manifest_fixture_name)
     )
   end
   let(:generated_file) do
     Dependabot::DependencyFile.new(
-      name: "requirements/test.txt",
-      content: fixture("requirements", generated_fixture_name)
+      name: "#{requirements_dir}/test.txt",
+      content: fixture("#{requirements_dir}", generated_fixture_name)
     )
   end
   let(:manifest_fixture_name) { "unpinned.in" }
@@ -45,7 +45,7 @@ RSpec.describe Dependabot::Python::FileUpdater::PipCompileFileUpdater do
   let(:dependency_previous_version) { "17.3.0" }
   let(:dependency_requirements) do
     [{
-      file: "requirements/test.in",
+      file: "#{requirements_dir}/test.in",
       requirement: nil,
       groups: [],
       source: nil
@@ -53,7 +53,7 @@ RSpec.describe Dependabot::Python::FileUpdater::PipCompileFileUpdater do
   end
   let(:dependency_previous_requirements) do
     [{
-      file: "requirements/test.in",
+      file: "#{requirements_dir}/test.in",
       requirement: nil,
       groups: [],
       source: nil
@@ -79,7 +79,7 @@ RSpec.describe Dependabot::Python::FileUpdater::PipCompileFileUpdater do
       expect(updated_files.first.content).to include("attrs==18.1.0")
       expect(updated_files.first.content)
         .to include("pbr==4.0.2\n    # via mock")
-      expect(updated_files.first.content).to include("# This file is autogen")
+      expect(updated_files.first.content).to include("#{autogen_header_string}")
       expect(updated_files.first.content).not_to include("--hash=sha")
     end
 
@@ -87,8 +87,8 @@ RSpec.describe Dependabot::Python::FileUpdater::PipCompileFileUpdater do
       let(:generated_fixture_name) { "pip_compile_unpinned_renamed.txt" }
       let(:generated_file) do
         Dependabot::DependencyFile.new(
-          name: "requirements/test-funky.txt",
-          content: fixture("requirements", generated_fixture_name)
+          name: "#{requirements_dir}/test-funky.txt",
+          content: fixture("#{requirements_dir}", generated_fixture_name)
         )
       end
 
@@ -97,7 +97,7 @@ RSpec.describe Dependabot::Python::FileUpdater::PipCompileFileUpdater do
         expect(updated_files.first.content).to include("attrs==18.1.0")
         expect(updated_files.first.content)
           .to include("pbr==4.0.2\n    # via mock")
-        expect(updated_files.first.content).to include("# This file is autogen")
+        expect(updated_files.first.content).to include("#{autogen_header_string}")
         expect(updated_files.first.content).not_to include("--hash=sha")
       end
     end
@@ -131,14 +131,6 @@ RSpec.describe Dependabot::Python::FileUpdater::PipCompileFileUpdater do
     context "with hashes" do
       let(:generated_fixture_name) { "pip_compile_hashes.txt" }
 
-      it "updates the requirements.txt, keeping the hashes" do
-        expect(updated_files.count).to eq(1)
-        expect(updated_files.first.content).to include("attrs==18.1.0")
-        expect(updated_files.first.content).to include("4b90b09eeeb9b88c35bc64")
-        expect(updated_files.first.content)
-          .not_to include("# This file is autogen")
-      end
-
       context "when needing an augmented hashin" do
         let(:manifest_fixture_name) { "extra_hashes.in" }
         let(:generated_fixture_name) { "pip_compile_extra_hashes.txt" }
@@ -149,7 +141,7 @@ RSpec.describe Dependabot::Python::FileUpdater::PipCompileFileUpdater do
         it "updates the requirements.txt, keeping all the hashes" do
           expect(updated_files.count).to eq(1)
           expect(updated_files.first.content)
-            .to include("# This file is autogen")
+            .to include("#{autogen_header_string}")
           expect(updated_files.first.content)
             .to include("pyasn1-modules==0.1.5 \\\n    --hash=sha256:01")
           expect(updated_files.first.content)
@@ -232,7 +224,7 @@ RSpec.describe Dependabot::Python::FileUpdater::PipCompileFileUpdater do
         expect(updated_files.first.content).not_to include("tmp/dependabot")
         expect(updated_files.first.content)
           .to include("pbr==4.0.2\n    # via mock")
-        expect(updated_files.first.content).to include("# This file is autogen")
+        expect(updated_files.first.content).to include("#{autogen_header_string}")
         expect(updated_files.first.content).not_to include("--hash=sha")
       end
 
@@ -280,7 +272,7 @@ RSpec.describe Dependabot::Python::FileUpdater::PipCompileFileUpdater do
         let(:requirement_file) do
           Dependabot::DependencyFile.new(
             name: "requirements.txt",
-            content: fixture("requirements", "pbr.txt")
+            content: fixture("#{requirements_dir}", "pbr.txt")
           )
         end
         let(:dependency_requirements) do
@@ -317,7 +309,7 @@ RSpec.describe Dependabot::Python::FileUpdater::PipCompileFileUpdater do
         expect(updated_files.first.content).to include("attrs==17.4.0")
         expect(updated_files.first.content)
           .to include("pbr==4.0.2\n    # via mock")
-        expect(updated_files.first.content).to include("# This file is autogen")
+        expect(updated_files.first.content).to include("#{autogen_header_string}")
         expect(updated_files.first.content).not_to include("--hash=sha")
       end
     end
@@ -328,7 +320,7 @@ RSpec.describe Dependabot::Python::FileUpdater::PipCompileFileUpdater do
 
       let(:dependency_requirements) do
         [{
-          file: "requirements/test.in",
+          file: "#{requirements_dir}/test.in",
           requirement: "<=18.1.0",
           groups: [],
           source: nil
@@ -336,7 +328,7 @@ RSpec.describe Dependabot::Python::FileUpdater::PipCompileFileUpdater do
       end
       let(:dependency_previous_requirements) do
         [{
-          file: "requirements/test.in",
+          file: "#{requirements_dir}/test.in",
           requirement: "<=17.4.0",
           groups: [],
           source: nil
@@ -356,13 +348,13 @@ RSpec.describe Dependabot::Python::FileUpdater::PipCompileFileUpdater do
           Dependabot::DependencyFile.new(
             name: "requirements.txt",
             content:
-              fixture("requirements", "pip_compile_unpinned.txt")
+              fixture("#{requirements_dir}", "pip_compile_unpinned.txt")
           )
         end
 
         let(:dependency_requirements) do
           [{
-            file: "requirements/test.in",
+            file: "#{requirements_dir}/test.in",
             requirement: "<=18.1.0",
             groups: [],
             source: nil
@@ -375,7 +367,7 @@ RSpec.describe Dependabot::Python::FileUpdater::PipCompileFileUpdater do
         end
         let(:dependency_previous_requirements) do
           [{
-            file: "requirements/test.in",
+            file: "#{requirements_dir}/test.in",
             requirement: "<=17.4.0",
             groups: [],
             source: nil
@@ -405,54 +397,54 @@ RSpec.describe Dependabot::Python::FileUpdater::PipCompileFileUpdater do
 
         let(:manifest_file2) do
           Dependabot::DependencyFile.new(
-            name: "requirements/dev.in",
+            name: "#{requirements_dir}/dev.in",
             content:
               fixture("pip_compile_files", manifest_fixture_name)
           )
         end
         let(:generated_file2) do
           Dependabot::DependencyFile.new(
-            name: "requirements/dev.txt",
-            content: fixture("requirements", generated_fixture_name)
+            name: "#{requirements_dir}/dev.txt",
+            content: fixture("#{requirements_dir}", generated_fixture_name)
           )
         end
 
         let(:manifest_file3) do
           Dependabot::DependencyFile.new(
-            name: "requirements/mirror2.in",
+            name: "#{requirements_dir}/mirror2.in",
             content:
               fixture("pip_compile_files", "imports_mirror.in")
           )
         end
         let(:generated_file3) do
           Dependabot::DependencyFile.new(
-            name: "requirements/mirror2.txt",
-            content: fixture("requirements", generated_fixture_name)
+            name: "#{requirements_dir}/mirror2.txt",
+            content: fixture("#{requirements_dir}", generated_fixture_name)
           )
         end
 
         let(:manifest_file4) do
           Dependabot::DependencyFile.new(
-            name: "requirements/mirror.in",
+            name: "#{requirements_dir}/mirror.in",
             content:
               fixture("pip_compile_files", "imports_dev.in")
           )
         end
         let(:generated_file4) do
           Dependabot::DependencyFile.new(
-            name: "requirements/mirror.txt",
-            content: fixture("requirements", generated_fixture_name)
+            name: "#{requirements_dir}/mirror.txt",
+            content: fixture("#{requirements_dir}", generated_fixture_name)
           )
         end
 
         let(:dependency_requirements) do
           [{
-            file: "requirements/test.in",
+            file: "#{requirements_dir}/test.in",
             requirement: "<=18.1.0",
             groups: [],
             source: nil
           }, {
-            file: "requirements/dev.in",
+            file: "#{requirements_dir}/dev.in",
             requirement: "<=18.1.0",
             groups: [],
             source: nil
@@ -460,12 +452,12 @@ RSpec.describe Dependabot::Python::FileUpdater::PipCompileFileUpdater do
         end
         let(:dependency_previous_requirements) do
           [{
-            file: "requirements/test.in",
+            file: "#{requirements_dir}/test.in",
             requirement: "<=17.4.0",
             groups: [],
             source: nil
           }, {
-            file: "requirements/dev.in",
+            file: "#{requirements_dir}/dev.in",
             requirement: "<=17.4.0",
             groups: [],
             source: nil
@@ -474,12 +466,12 @@ RSpec.describe Dependabot::Python::FileUpdater::PipCompileFileUpdater do
 
         it "updates the other manifest file, too" do
           expect(updated_files.count).to eq(6)
-          expect(updated_files[0].name).to eq("requirements/test.in")
-          expect(updated_files[1].name).to eq("requirements/dev.in")
-          expect(updated_files[2].name).to eq("requirements/test.txt")
-          expect(updated_files[3].name).to eq("requirements/dev.txt")
-          expect(updated_files[4].name).to eq("requirements/mirror2.txt")
-          expect(updated_files[5].name).to eq("requirements/mirror.txt")
+          expect(updated_files[0].name).to eq("#{requirements_dir}/test.in")
+          expect(updated_files[1].name).to eq("#{requirements_dir}/dev.in")
+          expect(updated_files[2].name).to eq("#{requirements_dir}/test.txt")
+          expect(updated_files[3].name).to eq("#{requirements_dir}/dev.txt")
+          expect(updated_files[4].name).to eq("#{requirements_dir}/mirror2.txt")
+          expect(updated_files[5].name).to eq("#{requirements_dir}/mirror.txt")
           expect(updated_files[0].content).to include("Attrs<=18.1.0")
           expect(updated_files[1].content).to include("Attrs<=18.1.0")
           expect(updated_files[2].content).to include("attrs==18.1.0")
@@ -632,5 +624,29 @@ RSpec.describe Dependabot::Python::FileUpdater::PipCompileFileUpdater do
         expect(result).to eq(["--hash=sha256:123abc"])
       end
     end
+  end
+end
+
+RSpec.describe Dependabot::Python::FileUpdater::PipCompileFileUpdater do
+  context "with pip-compile" do
+    it_behaves_like "PipCompileFileUpdater", "requirements", "# This file is autogen"
+
+    subject(:updated_files) { updater.updated_dependency_files }
+    describe "#updated_dependency_files" do
+      context "with hashes2" do
+        let(:generated_fixture_name) { "pip_compile_hashes.txt" }
+        it "updates the requirements.txt, keeping the hashes, without header" do
+          expect(updated_files.count).to eq(1)
+          expect(updated_files.first.content).to include("attrs==18.1.0")
+          expect(updated_files.first.content).to include("4b90b09eeeb9b88c35bc64")
+          expect(updated_files.first.content)
+            .not_to include("# This file is autogen")
+        end
+      end
+    end
+  end
+
+  context "with uv" do
+    it_behaves_like "PipCompileFileUpdater", "requirements_uv", "# This file was autogenerated by uv"
   end
 end
